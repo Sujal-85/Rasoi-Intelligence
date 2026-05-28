@@ -1,4 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useState, useEffect } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { CLIENTS, inr } from "@/lib/mock/data";
 
@@ -8,6 +9,25 @@ export const Route = createFileRoute("/reports")({
 });
 
 function ReportsPage() {
+  const nav = useNavigate();
+  const [userRole, setUserRole] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const role = sessionStorage.getItem("userRole");
+      setUserRole(role);
+      if (!role) {
+        nav({ to: "/login" });
+      } else if (role !== "admin") {
+        nav({ to: "/sessions/$id/dashboard", params: { id: "c1" } as any });
+      }
+    }
+  }, [nav]);
+
+  if (!userRole || userRole !== "admin") {
+    return null;
+  }
+
   const rows = CLIENTS.flatMap((c) => [
     { c, m: "March 2025", rev: c.lastRevenue, rag: c.rag, gen: "2 days ago" },
     { c, m: "February 2025", rev: Math.round(c.lastRevenue * 0.88), rag: "amber" as const, gen: "1 mo ago" },
