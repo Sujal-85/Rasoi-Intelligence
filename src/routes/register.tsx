@@ -37,7 +37,7 @@ function RegisterPage() {
 
     // Redirect to the newly created client's dashboard or fallback to c1
     const rid = result.restaurantId || "c1";
-    nav({ to: "/clients/$id", params: { id: rid } as any });
+    nav({ to: "/sessions/$id/dashboard", params: { id: rid } as any });
   };
 
   return (

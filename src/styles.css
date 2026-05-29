@@ -64,6 +64,49 @@
 
 :root {
   --radius: 0.75rem;
+  --background: oklch(0.98 0.005 60); /* #FCFBF8 Alabaster warm-white */
+  --foreground: oklch(0.18 0.01 60); /* #1E1E1E Deep charcoal */
+  --surface: oklch(0.96 0.006 60); /* #F4F3ED Off-white */
+  --surface-2: oklch(0.92 0.008 60); /* #EAE8DF Warm light-grey */
+  --card: oklch(1 0 0); /* #FFFFFF Pure white */
+  --card-foreground: oklch(0.18 0.01 60);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.01 60);
+  --primary: oklch(0.76 0.14 75); /* Deep rich warm saffron/gold */
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.92 0.008 60);
+  --secondary-foreground: oklch(0.18 0.01 60);
+  --muted: oklch(0.94 0.006 60);
+  --muted-foreground: oklch(0.45 0.01 60); /* Soft muted charcoal */
+  --accent: oklch(0.76 0.14 75);
+  --accent-foreground: oklch(1 0 0);
+  --destructive: oklch(0.55 0.18 25);
+  --destructive-foreground: oklch(0.98 0.01 80);
+  --border: oklch(0.90 0.008 60); /* Soft warm grey border */
+  --input: oklch(0.90 0.008 60);
+  --ring: oklch(0.76 0.14 75);
+  --gold: oklch(0.76 0.14 75);
+  --gold-soft: oklch(0.94 0.05 85);
+  --saffron: oklch(0.68 0.16 55);
+  --rag-green: oklch(0.58 0.15 145); /* Rich grass green */
+  --rag-amber: oklch(0.72 0.14 75); /* Soft amber */
+  --rag-red: oklch(0.55 0.18 25); /* Deep warning red */
+  --chart-1: oklch(0.76 0.14 75);
+  --chart-2: oklch(0.60 0.12 200);
+  --chart-3: oklch(0.55 0.18 25);
+  --chart-4: oklch(0.58 0.15 145);
+  --chart-5: oklch(0.60 0.14 300);
+  --sidebar: oklch(0.97 0.006 60); /* Light sidebar */
+  --sidebar-foreground: oklch(0.18 0.01 60);
+  --sidebar-primary: oklch(0.76 0.14 75);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.94 0.008 60);
+  --sidebar-accent-foreground: oklch(0.18 0.01 60);
+  --sidebar-border: oklch(0.90 0.008 60);
+  --sidebar-ring: oklch(0.76 0.14 75);
+}
+
+.dark {
   --background: oklch(0.16 0.012 60);
   --foreground: oklch(0.96 0.012 80);
   --surface: oklch(0.20 0.014 60);
@@ -158,5 +201,55 @@
   }
   .scrollbar-none::-webkit-scrollbar {
     display: none;
+  }
+
+  @keyframes infinite-scroll {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+  
+  .animate-infinite-scroll {
+    display: flex;
+    width: max-content;
+    animation: infinite-scroll 40s linear infinite;
+  }
+  
+  .animate-infinite-scroll:hover {
+    animation-play-state: paused;
+  }
+
+  /* Custom Range Slider Thumb Styling for Premium ROI calculator */
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--gold) 0%, var(--saffron) 100%);
+    cursor: pointer;
+    box-shadow: 0 0 12px rgba(229, 178, 82, 0.45);
+    transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.15s ease;
+    border: 2px solid var(--card);
+  }
+  
+  input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.25);
+    box-shadow: 0 0 18px rgba(229, 178, 82, 0.7);
+  }
+  
+  input[type="range"]::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--gold) 0%, var(--saffron) 100%);
+    cursor: pointer;
+    box-shadow: 0 0 12px rgba(229, 178, 82, 0.45);
+    transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.15s ease;
+    border: 2px solid var(--card);
+  }
+  
+  input[type="range"]::-moz-range-thumb:hover {
+    transform: scale(1.25);
+    box-shadow: 0 0 18px rgba(229, 178, 82, 0.7);
   }
 }

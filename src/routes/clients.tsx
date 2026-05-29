@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate, Outlet, useMatch } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { motion } from "motion/react";
-import { Plus, ArrowRight, MoreVertical, ShieldAlert, Cpu, IndianRupee, Settings, Users } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
+import { Plus, ArrowRight, MoreVertical, ShieldAlert, Cpu, IndianRupee, Settings, Users, CheckCircle2, AlertCircle, Zap, CreditCard } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { CLIENTS, inr } from "@/lib/mock/data";
 import { useAuth } from "@/lib/auth";
@@ -29,10 +29,21 @@ function ClientsLayout() {
 
 function ClientsPage() {
   const nav = useNavigate();
-  const { userRole, loading: authLoading } = useAuth();
+  const { userRole, loading: authLoading, user } = useAuth();
   const [adminTab, setAdminTab] = useState<"Clients" | "AI Usage" | "Payments">("Clients");
-  const [clientsList, setClientsList] = useState<any[]>(CLIENTS);
+  const [clientsList, setClientsList] = useState<any[]>([]);
   const [dbLoading, setDbLoading] = useState(true);
+
+  // Registration Modal State
+  const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [regName, setRegName] = useState("");
+  const [regEmail, setRegEmail] = useState("");
+  const [regType, setRegType] = useState("Fine Dining");
+  const [regCapacity, setRegCapacity] = useState("60");
+  const [regLocation, setRegLocation] = useState("");
+  const [regCity, setRegCity] = useState("Mumbai");
+  const [regIcon, setRegIcon] = useState("🍽️");
+  const [regError, setRegError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading) {
@@ -40,7 +51,7 @@ function ClientsPage() {
         nav({ to: "/login" });
       } else if (userRole !== "admin") {
         const fallbackId = sessionStorage.getItem("restaurantId") || "c1";
-        nav({ to: "/clients/$id", params: { id: fallbackId } as any });
+        nav({ to: "/sessions/$id/dashboard", params: { id: fallbackId } as any });
       }
     }
   }, [userRole, authLoading, nav]);
@@ -48,6 +59,25 @@ function ClientsPage() {
   useEffect(() => {
     async function loadRestaurants() {
       try {
+        // Load custom local storage restaurants first
+        const localRestStr = typeof window !== "undefined" ? localStorage.getItem("rasoi_local_restaurants") : null;
+        const localRestaurants = localRestStr ? JSON.parse(localRestStr) : [];
+        const localMapped = localRestaurants.map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          type: c.type || "Fine Dining",
+          location: c.location || "Mumbai",
+          city: c.city || "Mumbai",
+          icon: c.icon || "🍽️",
+          capacity: c.capacity || 50,
+          lastPeriod: "Never",
+          lastRevenue: 0,
+          repeatRate: 0,
+          rag: "green" as const,
+          monthsOfData: 0,
+          sessions: 0
+        }));
+
         const { data, error } = await supabase
           .from("restaurants")
           .select("*");
@@ -74,22 +104,130 @@ function ClientsPage() {
             };
           });
           
-          // Merge default CLIENTS that might not be in DB to keep the dashboard rich
+          // Merge local restaurants that might not be in DB
           const existingNames = new Set(mapped.map(m => m.name.toLowerCase()));
-          const remainingClients = CLIENTS.filter(c => !existingNames.has(c.name.toLowerCase()));
-          setClientsList([...mapped, ...remainingClients]);
+          const remainingLocal = localMapped.filter((c: any) => !existingNames.has(c.name.toLowerCase()));
+          
+          setClientsList([...mapped, ...remainingLocal]);
         } else {
-          setClientsList(CLIENTS);
+          setClientsList(localMapped);
         }
       } catch (err) {
-        console.warn("Failed to fetch restaurants from Supabase, using mock CLIENTS:", err);
-        setClientsList(CLIENTS);
+        console.warn("Failed to fetch restaurants from Supabase, using mock + local CLIENTS:", err);
+        const localRestStr = typeof window !== "undefined" ? localStorage.getItem("rasoi_local_restaurants") : null;
+        const localRestaurants = localRestStr ? JSON.parse(localRestStr) : [];
+        const localMapped = localRestaurants.map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          type: c.type || "Fine Dining",
+          location: c.location || "Mumbai",
+          city: c.city || "Mumbai",
+          icon: c.icon || "🍽️",
+          capacity: c.capacity || 50,
+          lastPeriod: "Never",
+          lastRevenue: 0,
+          repeatRate: 0,
+          rag: "green" as const,
+          monthsOfData: 0,
+          sessions: 0
+        }));
+        
+        setClientsList(localMapped);
       } finally {
         setDbLoading(false);
       }
     }
     loadRestaurants();
   }, []);
+
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRegError(null);
+
+    const newId = "c_" + Math.random().toString(36).substr(2, 9);
+    const newRestaurantData = {
+      name: regName,
+      email: regEmail,
+      type: regType,
+      capacity: Number(regCapacity),
+      location: regLocation,
+      city: regCity,
+      icon: regIcon,
+    };
+
+    try {
+      // 1. Try saving to Supabase first
+      const { data, error } = await supabase
+        .from("restaurants")
+        .insert({
+          ...newRestaurantData,
+          owner_id: user?.id || null, // Align with current logged in admin
+        })
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      if (data) {
+        const newClientItem = {
+          id: data.id,
+          name: data.name,
+          type: data.type || "Fine Dining",
+          location: data.location || "Mumbai",
+          city: data.city || "Mumbai",
+          icon: data.icon || "🍽️",
+          capacity: data.capacity || 0,
+          lastPeriod: "Never",
+          lastRevenue: 0,
+          repeatRate: 0,
+          rag: "green" as const,
+          monthsOfData: 0,
+          sessions: 0,
+        };
+        setClientsList(prev => [newClientItem, ...prev]);
+        setShowRegisterModal(false);
+        // Clear fields
+        setRegName("");
+        setRegEmail("");
+        setRegLocation("");
+        setRegCapacity("60");
+      }
+    } catch (err: any) {
+      console.warn("Could not register restaurant in Supabase, using local fallback:", err);
+      
+      // 2. Local fallback: Save to localStorage
+      const localRestItem = {
+        id: newId,
+        ...newRestaurantData,
+        lastPeriod: "Never",
+        lastRevenue: 0,
+        repeatRate: 0,
+        rag: "green" as const,
+        monthsOfData: 0,
+        sessions: 0,
+      };
+
+      try {
+        const localList = JSON.parse(localStorage.getItem("rasoi_local_restaurants") || "[]");
+        localList.push(localRestItem);
+        localStorage.setItem("rasoi_local_restaurants", JSON.stringify(localList));
+
+        // Prepend to local state list
+        setClientsList(prev => [localRestItem, ...prev]);
+        setShowRegisterModal(false);
+        
+        // Clear fields
+        setRegName("");
+        setRegEmail("");
+        setRegLocation("");
+        setRegCapacity("60");
+      } catch (localErr) {
+        setRegError("Failed to save restaurant locally.");
+      }
+    }
+  };
 
   if (authLoading || !userRole || userRole !== "admin") {
     return null;
@@ -98,18 +236,22 @@ function ClientsPage() {
   const totalRevenue = clientsList.reduce((s, c) => s + c.lastRevenue, 0);
   const totalSessions = clientsList.reduce((s, c) => s + c.sessions, 0);
 
-  // Mock Admin-specific details
-  const usages = [
-    { name: "Saffron Lounge (c1)", apiCalls: 1247, tokens: "3.4M tokens", computeTime: "42.5s", status: "Optimal" },
-    { name: "The Spicy Tadka (c2)", apiCalls: 890, tokens: "2.1M tokens", computeTime: "28.1s", status: "Optimal" },
-    { name: "Rasoi Express (c3)", apiCalls: 1560, tokens: "5.8M tokens", computeTime: "89.4s", status: "High Load" },
-  ];
+  // AI Usage & Payments are derived from registered clientsList (no hardcoded mock data)
+  const usages = clientsList.map((c: any) => ({
+    name: c.name,
+    apiCalls: 0,
+    tokens: "0 tokens",
+    computeTime: "0s",
+    status: "No Data",
+  }));
 
-  const payments = [
-    { name: "Saffron Lounge (c1)", plan: "Growth", amount: "₹2,499", dueDate: "05 June 2026", status: "Paid" },
-    { name: "The Spicy Tadka (c2)", plan: "Starter", amount: "₹999", dueDate: "28 May 2026", status: "Payment Overdue" },
-    { name: "Rasoi Express (c3)", plan: "Agency", amount: "₹5,999", dueDate: "01 June 2026", status: "Pending" },
-  ];
+  const payments = clientsList.map((c: any) => ({
+    name: c.name,
+    plan: "—",
+    amount: "₹0",
+    dueDate: "—",
+    status: "No Invoice",
+  }));
 
   return (
     <AppShell>
@@ -120,7 +262,13 @@ function ClientsPage() {
             <h1 className="font-display text-4xl mt-2">Core Control Centre</h1>
             <p className="text-sm text-muted-foreground mt-1">Manage system intelligence, usage limits, and client registrations.</p>
           </div>
-          <button className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-gold-gradient text-primary-foreground text-sm font-medium glow-gold">
+          <button 
+            onClick={() => {
+              setRegError(null);
+              setShowRegisterModal(true);
+            }}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-gold-gradient text-primary-foreground text-sm font-medium glow-gold hover:opacity-95 active:scale-[0.98] transition-all"
+          >
             <Plus className="h-4 w-4" /> Register New Restaurant
           </button>
         </div>
@@ -160,7 +308,7 @@ function ClientsPage() {
                   transition={{ delay: i * 0.06, duration: 0.5 }}
                 >
                   <Link
-                    to="/clients/$id" params={{ id: c.id }}
+                    to="/sessions/$id/dashboard" params={{ id: c.id }}
                     className="group block rounded-2xl border border-border/70 bg-card hover:border-gold/40 transition overflow-hidden"
                   >
                     <div className="p-6">
@@ -211,32 +359,42 @@ function ClientsPage() {
               <h3 className="font-display text-lg">AI Token Usage & Limits</h3>
               <p className="text-xs text-muted-foreground">Real-time compute and API metrics logged for Gemini API integration.</p>
             </div>
-            <table className="w-full text-sm">
-              <thead className="bg-surface/60 text-xs uppercase tracking-widest text-muted-foreground">
-                <tr>
-                  <th className="text-left px-6 py-3 font-medium">Restaurant</th>
-                  <th className="text-left px-6 py-3 font-medium">Total API Queries</th>
-                  <th className="text-left px-6 py-3 font-medium">Token Consumed</th>
-                  <th className="text-left px-6 py-3 font-medium">Compute Duration</th>
-                  <th className="text-left px-6 py-3 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {usages.map((u, i) => (
-                  <tr key={i} className="border-t border-border/60 hover:bg-surface/40">
-                    <td className="px-6 py-4 font-medium">{u.name}</td>
-                    <td className="px-6 py-4 font-mono">{u.apiCalls}</td>
-                    <td className="px-6 py-4 font-mono text-gold">{u.tokens}</td>
-                    <td className="px-6 py-4 font-mono">{u.computeTime}</td>
-                    <td className="px-6 py-4">
-                      <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border ${
-                        u.status === "Optimal" ? "text-rag-green bg-rag-green/10 border-rag-green/20" : "text-rag-amber bg-rag-amber/10 border-rag-amber/20"
-                      }`}>{u.status}</span>
-                    </td>
+            {usages.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 px-6 text-center gap-4">
+                <div className="h-12 w-12 rounded-2xl bg-gold/10 border border-gold/20 flex items-center justify-center">
+                  <Zap className="h-5 w-5 text-gold/60" />
+                </div>
+                <div>
+                  <div className="font-display text-base font-semibold">No AI usage data yet</div>
+                  <p className="text-xs text-muted-foreground mt-1 max-w-xs">API token metrics will appear here once restaurants are registered and start uploading billing data.</p>
+                </div>
+              </div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-surface/60 text-xs uppercase tracking-widest text-muted-foreground">
+                  <tr>
+                    <th className="text-left px-6 py-3 font-medium">Restaurant</th>
+                    <th className="text-left px-6 py-3 font-medium">Total API Queries</th>
+                    <th className="text-left px-6 py-3 font-medium">Token Consumed</th>
+                    <th className="text-left px-6 py-3 font-medium">Compute Duration</th>
+                    <th className="text-left px-6 py-3 font-medium">Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {usages.map((u, i) => (
+                    <tr key={i} className="border-t border-border/60 hover:bg-surface/40">
+                      <td className="px-6 py-4 font-medium">{u.name}</td>
+                      <td className="px-6 py-4 font-mono text-muted-foreground">{u.apiCalls}</td>
+                      <td className="px-6 py-4 font-mono text-muted-foreground">{u.tokens}</td>
+                      <td className="px-6 py-4 font-mono text-muted-foreground">{u.computeTime}</td>
+                      <td className="px-6 py-4">
+                        <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border text-muted-foreground bg-surface border-border/60">{u.status}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         )}
 
@@ -246,39 +404,172 @@ function ClientsPage() {
               <h3 className="font-display text-lg">Payment Status</h3>
               <p className="text-xs text-muted-foreground">Pending invoices and subscription logs across standard accounts.</p>
             </div>
-            <table className="w-full text-sm">
-              <thead className="bg-surface/60 text-xs uppercase tracking-widest text-muted-foreground">
-                <tr>
-                  <th className="text-left px-6 py-3 font-medium">Restaurant</th>
-                  <th className="text-left px-6 py-3 font-medium">Active Subscription Plan</th>
-                  <th className="text-left px-6 py-3 font-medium">Outstanding Balance</th>
-                  <th className="text-left px-6 py-3 font-medium">Invoice Due Date</th>
-                  <th className="text-left px-6 py-3 font-medium">Payment Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {payments.map((p, i) => (
-                  <tr key={i} className="border-t border-border/60 hover:bg-surface/40">
-                    <td className="px-6 py-4 font-medium">{p.name}</td>
-                    <td className="px-6 py-4"><span className="inline-block px-2 py-0.5 bg-surface border border-border text-xs rounded-full">{p.plan}</span></td>
-                    <td className="px-6 py-4 font-mono font-medium text-foreground">{p.amount}</td>
-                    <td className="px-6 py-4 text-muted-foreground">{p.dueDate}</td>
-                    <td className="px-6 py-4">
-                      <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border ${
-                        p.status === "Paid" 
-                          ? "text-rag-green bg-rag-green/10 border-rag-green/20" 
-                          : p.status === "Pending" 
-                            ? "text-rag-amber bg-rag-amber/10 border-rag-amber/20" 
-                            : "text-rag-red bg-rag-red/10 border-rag-red/20"
-                      }`}>{p.status}</span>
-                    </td>
+            {payments.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 px-6 text-center gap-4">
+                <div className="h-12 w-12 rounded-2xl bg-gold/10 border border-gold/20 flex items-center justify-center">
+                  <CreditCard className="h-5 w-5 text-gold/60" />
+                </div>
+                <div>
+                  <div className="font-display text-base font-semibold">No payment records yet</div>
+                  <p className="text-xs text-muted-foreground mt-1 max-w-xs">Invoice and subscription data will appear here once restaurants are onboarded and billing plans are assigned.</p>
+                </div>
+              </div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-surface/60 text-xs uppercase tracking-widest text-muted-foreground">
+                  <tr>
+                    <th className="text-left px-6 py-3 font-medium">Restaurant</th>
+                    <th className="text-left px-6 py-3 font-medium">Active Subscription Plan</th>
+                    <th className="text-left px-6 py-3 font-medium">Outstanding Balance</th>
+                    <th className="text-left px-6 py-3 font-medium">Invoice Due Date</th>
+                    <th className="text-left px-6 py-3 font-medium">Payment Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {payments.map((p, i) => (
+                    <tr key={i} className="border-t border-border/60 hover:bg-surface/40">
+                      <td className="px-6 py-4 font-medium">{p.name}</td>
+                      <td className="px-6 py-4"><span className="inline-block px-2 py-0.5 bg-surface border border-border text-xs rounded-full">{p.plan}</span></td>
+                      <td className="px-6 py-4 font-mono font-medium text-muted-foreground">{p.amount}</td>
+                      <td className="px-6 py-4 text-muted-foreground">{p.dueDate}</td>
+                      <td className="px-6 py-4">
+                        <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border text-muted-foreground bg-surface border-border/60">{p.status}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         )}
       </div>
+
+      {/* Registration Modal Overlay */}
+      <AnimatePresence>
+        {showRegisterModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/85 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }} 
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-lg rounded-3xl border border-border bg-card shadow-2xl p-6 space-y-4 text-left"
+            >
+              <div className="flex justify-between items-center pb-2 border-b border-border/60">
+                <h2 className="font-display text-2xl font-bold">Register Restaurant</h2>
+                <button 
+                  onClick={() => setShowRegisterModal(false)}
+                  className="text-muted-foreground hover:text-foreground text-2xl p-1 leading-none"
+                >
+                  &times;
+                </button>
+              </div>
+              
+              {regError && (
+                <div className="p-3 text-xs bg-rag-red/10 border border-rag-red/30 rounded-xl text-rag-red text-center">
+                  {regError}
+                </div>
+              )}
+
+              <form onSubmit={handleRegisterSubmit} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <label className="block">
+                    <span className="text-xs uppercase tracking-widest text-muted-foreground block mb-1.5">Restaurant Name</span>
+                    <input 
+                      type="text" required placeholder="Mumbai Dhaba" value={regName}
+                      onChange={(e) => setRegName(e.target.value)}
+                      className="w-full bg-surface border border-border rounded-lg px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs uppercase tracking-widest text-muted-foreground block mb-1.5">Email</span>
+                    <input 
+                      type="email" required placeholder="contact@mumbaidhaba.in" value={regEmail}
+                      onChange={(e) => setRegEmail(e.target.value)}
+                      className="w-full bg-surface border border-border rounded-lg px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <label className="block">
+                    <span className="text-xs uppercase tracking-widest text-muted-foreground block mb-1.5">Type</span>
+                    <select 
+                      value={regType} onChange={(e) => setRegType(e.target.value)}
+                      className="w-full bg-surface border border-border rounded-lg px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/40 cursor-pointer"
+                    >
+                      <option value="Fine Dining">Fine Dining</option>
+                      <option value="Bar & Restaurant">Bar & Restaurant</option>
+                      <option value="Casual">Casual</option>
+                      <option value="QSR">QSR</option>
+                      <option value="Cloud Kitchen">Cloud Kitchen</option>
+                      <option value="Dhaba">Dhaba</option>
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-xs uppercase tracking-widest text-muted-foreground block mb-1.5">Capacity (Covers)</span>
+                    <input 
+                      type="number" required placeholder="60" value={regCapacity}
+                      onChange={(e) => setRegCapacity(e.target.value)}
+                      className="w-full bg-surface border border-border rounded-lg px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <label className="block">
+                    <span className="text-xs uppercase tracking-widest text-muted-foreground block mb-1.5">Location</span>
+                    <input 
+                      type="text" required placeholder="Bandra West" value={regLocation}
+                      onChange={(e) => setRegLocation(e.target.value)}
+                      className="w-full bg-surface border border-border rounded-lg px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs uppercase tracking-widest text-muted-foreground block mb-1.5">City</span>
+                    <input 
+                      type="text" required placeholder="Mumbai" value={regCity}
+                      onChange={(e) => setRegCity(e.target.value)}
+                      className="w-full bg-surface border border-border rounded-lg px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
+                    />
+                  </label>
+                </div>
+
+                <label className="block">
+                  <span className="text-xs uppercase tracking-widest text-muted-foreground block mb-1.5">Icon</span>
+                  <select 
+                    value={regIcon} onChange={(e) => setRegIcon(e.target.value)}
+                    className="w-full bg-surface border border-border rounded-lg px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/40 cursor-pointer"
+                  >
+                    <option value="🪷">🪷 Lotus</option>
+                    <option value="🍽️">🍽️ Plate & Silverware</option>
+                    <option value="🌿">🌿 Leaf</option>
+                    <option value="🍸">🍸 Martini Glass</option>
+                    <option value="🍛">🍛 Curry Bowl</option>
+                    <option value="🐟">🐟 Fish</option>
+                    <option value="🚛">🚛 Truck</option>
+                  </select>
+                </label>
+
+                <div className="flex justify-end gap-3 pt-4 border-t border-border/60">
+                  <button 
+                    type="button" 
+                    onClick={() => setShowRegisterModal(false)}
+                    className="px-4 py-2 border border-border hover:bg-surface rounded-full text-xs font-semibold"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="submit" 
+                    className="px-5 py-2 bg-gold-gradient text-primary-foreground font-semibold rounded-full text-xs shadow glow-gold"
+                  >
+                    Register Restaurant
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </AppShell>
   );
 }

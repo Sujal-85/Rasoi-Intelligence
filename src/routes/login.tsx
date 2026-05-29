@@ -37,7 +37,7 @@ function LoginPage() {
       nav({ to: "/clients" });
     } else {
       const restaurantId = sessionStorage.getItem("restaurantId") || "c1";
-      nav({ to: "/clients/$id", params: { id: restaurantId } as any });
+      nav({ to: "/sessions/$id/dashboard", params: { id: restaurantId } as any });
     }
   };
 
@@ -48,8 +48,13 @@ function LoginPage() {
         className="space-y-4"
       >
         {error && (
-          <div className="p-3 text-xs bg-rag-red/10 border border-rag-red/30 rounded-lg text-rag-red text-center">
-            {error}
+          <div className="p-3 text-xs bg-rag-red/10 border border-rag-red/30 rounded-lg text-rag-red text-center space-y-1">
+            <div>{error}</div>
+            {error.includes("credentials") && (
+              <div className="text-[10px] text-muted-foreground/80 mt-1 pt-1 border-t border-rag-red/20">
+                💡 Local fallback active. You can register a new account on the signup page, or use the demo accounts below.
+              </div>
+            )}
           </div>
         )}
         <Field label="Email">

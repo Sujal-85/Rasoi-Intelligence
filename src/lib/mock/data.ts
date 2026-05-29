@@ -92,7 +92,38 @@ export const CLIENTS = [
 ];
 
 export function getClient(id: string) {
-  return CLIENTS.find((c) => c.id === id) ?? CLIENTS[0];
+  const found = CLIENTS.find((c) => c.id === id);
+  if (found) return found;
+
+  if (typeof window !== "undefined") {
+    try {
+      const localRestStr = localStorage.getItem("rasoi_local_restaurants");
+      if (localRestStr) {
+        const localList = JSON.parse(localRestStr);
+        const localFound = localList.find((c: any) => c.id === id);
+        if (localFound) {
+          return {
+            id: localFound.id,
+            name: localFound.name,
+            type: localFound.type || "Fine Dining",
+            location: localFound.location || "Mumbai",
+            city: localFound.city || "Mumbai",
+            icon: localFound.icon || "🍽️",
+            capacity: localFound.capacity || 50,
+            lastPeriod: "Never",
+            lastRevenue: 0,
+            repeatRate: 0,
+            rag: "green" as const,
+            monthsOfData: 0,
+            sessions: 0,
+          };
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to read local restaurants in getClient:", e);
+    }
+  }
+  return CLIENTS[0];
 }
 
 export const REVENUE_BY_WEEK = [
