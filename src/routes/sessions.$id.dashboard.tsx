@@ -212,126 +212,43 @@ function DashboardPage() {
       } catch { /* ignore parse errors */ }
     }
 
+    // If we reach this point, we didn't find any cached or database-stored analytics.
+    // Instead of calling the Gemini API automatically on mount, load the fallback/sample data
+    // and show the banner informing the user to upload their files to view live analytics.
     setAiLoading(true);
-    setAiError(false);
+    setAiError(true);
 
-    const prompt = `You are Rasoi AI. Generate a complete monthly analytics report for "${c.name}" (a ${c.type} restaurant in ${c.location}, ${c.city} with capacity ${c.capacity > 0 ? c.capacity + ' covers' : 'cloud kitchen'}).
-
-Return ONLY valid JSON (no markdown, no backticks, no explanation) matching this exact schema:
-{
-  "kpis": {
-    "totalRevenue": <number in INR>,
-    "revenueDelta": <number: MoM % change>,
-    "totalOrders": <number>,
-    "ordersDelta": <number: MoM % change>,
-    "avgBill": <number in INR>,
-    "avgBillDelta": <number: MoM % change>,
-    "totalCovers": <number>,
-    "perCover": <number in INR>,
-    "foodCostPct": <number: percentage>,
-    "foodCostDelta": <number: MoM change in pp>,
-    "repeatRate": <number: percentage>,
-    "returningCount": <number>
-  },
-  "revenueByWeek": [
-    { "week": "W1", "current": <number>, "previous": <number> },
-    { "week": "W2", "current": <number>, "previous": <number> },
-    { "week": "W3", "current": <number>, "previous": <number> },
-    { "week": "W4", "current": <number>, "previous": <number> }
-  ],
-  "topItems": [
-    { "name": "<dish name>", "revenue": <number>, "pct": <number>, "veg": <boolean> }
-  ],
-  "ordersByHour": [
-    { "h": "<hour label like 11a, 12p>", "o": <number of orders> }
-  ],
-  "paymentMix": [
-    { "name": "<payment method>", "value": <percentage> }
-  ],
-  "insights": [
-    { "tone": "green", "title": "<what is working>", "body": "<detail>" },
-    { "tone": "red", "title": "<what needs attention>", "body": "<detail>" },
-    { "tone": "gold", "title": "<biggest opportunity>", "body": "<detail>" }
-  ],
-  "ragSummary": { "green": <number>, "amber": <number>, "red": <number> },
-  "aiSummary": "<a 2-3 sentence narrative summary of the month's performance, written like an expert consultant>"
-}
-
-Make the data realistic for an Indian ${c.type} restaurant. Generate 5 top items, 12 hourly order entries (11a through 10p), and 4 payment methods. Revenue should be plausible for ${c.city}. Use creative Indian dish names appropriate for ${c.type}. All monetary values in INR.`;
-
-    try {
-      const response = await getGeminiResponse(prompt);
-      // Clean response: strip markdown code fences if present
-      let cleaned = response.trim();
-      if (cleaned.startsWith("```")) {
-        cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
-      }
-      const parsed = JSON.parse(cleaned) as AIAnalyticsData;
-      
-      // Validate essential fields exist
-      if (!parsed.kpis || !parsed.revenueByWeek || !parsed.topItems) {
-        throw new Error("Missing required fields in AI response");
-      }
-
-      // Try saving to Supabase
-      try {
-        const tone = parsed.insights?.[0]?.tone || "green";
-        const title = parsed.insights?.[0]?.title || "Monthly Analytics Summary";
-        const summary = parsed.aiSummary || "Analysis of restaurant sales and metrics.";
-        
-        await supabase.from("ai_insights").insert({
-          restaurant_id: getSafeUUID(id),
-          period: parsed.lastPeriod || "March 2025",
-          type: "Monthly Analytics",
-          title,
-          summary,
-          raw_analysis: parsed,
-          tone
-        });
-      } catch (dbErr) {
-        console.warn("Could not save new AI insight to Supabase:", dbErr);
-      }
-
-      setAiData(parsed);
-      sessionStorage.setItem(cacheKey, JSON.stringify(parsed));
-      setAiError(false);
-    } catch (err) {
-      console.error("AI analytics parse error:", err);
-      // Fall back to mock data
-      const fallback: AIAnalyticsData = {
-        kpis: {
-          ...KPIS,
-          revenueDelta: 12.4,
+    const fallback: AIAnalyticsData = {
+      kpis: {
+        ...KPIS,
+        revenueDelta: 12.4,
+      },
+      revenueByWeek: REVENUE_BY_WEEK,
+      topItems: TOP_ITEMS,
+      ordersByHour: ORDERS_BY_HOUR,
+      paymentMix: PAYMENT_MIX,
+      insights: [
+        {
+          tone: "green" as const,
+          title: "Dinner capacity at peak",
+          body: "Weekday dinner capacity is at peak (+12.4%). Prep and staff coverage are fully optimized to support high demand.",
         },
-        revenueByWeek: REVENUE_BY_WEEK,
-        topItems: TOP_ITEMS,
-        ordersByHour: ORDERS_BY_HOUR,
-        paymentMix: PAYMENT_MIX,
-        insights: [
-          {
-            tone: "green" as const,
-            title: "Dinner capacity at peak",
-            body: "Weekday dinner capacity is at peak (+12.4%). Prep and staff coverage are fully optimized to support high demand.",
-          },
-          {
-            tone: "gold" as const,
-            title: "Combo expansion opportunity",
-            body: "Weekday lunch holds major scope for combo expansion. Introducing lunch combos could significantly increase afternoon occupancies.",
-          },
-          {
-            tone: "red" as const,
-            title: "Lunch occupancy gap",
-            body: "Weekday lunch occupancy holds major scope for improvement. Current repeat visits for lunch are lagging behind dinner.",
-          }
-        ],
-        ragSummary: RAG_SUMMARY,
-        aiSummary: "Weekday dinner capacity is at peak (+12.4%), but weekday lunch holds major scope for combo expansion.",
-      };
-      setAiData(fallback);
-      setAiError(true);
-    } finally {
-      setAiLoading(false);
-    }
+        {
+          tone: "gold" as const,
+          title: "Combo expansion opportunity",
+          body: "Weekday lunch holds major scope for combo expansion. Introducing lunch combos could significantly increase afternoon occupancies.",
+        },
+        {
+          tone: "red" as const,
+          title: "Lunch occupancy gap",
+          body: "Weekday lunch occupancy holds major scope for improvement. Current repeat visits for lunch are lagging behind dinner.",
+        }
+      ],
+      ragSummary: RAG_SUMMARY,
+      aiSummary: "Weekday dinner capacity is at peak (+12.4%), but weekday lunch holds major scope for combo expansion.",
+    };
+    setAiData(fallback);
+    setAiLoading(false);
   };
 
   useEffect(() => {

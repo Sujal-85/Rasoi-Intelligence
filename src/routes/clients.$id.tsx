@@ -218,6 +218,26 @@ function NewAnalysis({ clientId, client }: { clientId: string; client: ReturnTyp
       const parsed = JSON.parse(response.replace(/```json|```/g, ""));
       const cacheKey = `rasoi_ai_analytics_${clientId}`;
       sessionStorage.setItem(cacheKey, JSON.stringify(parsed));
+      
+      // Save newly generated insights to Supabase so it persists permanently
+      try {
+        const tone = parsed.insights?.[0]?.tone || "green";
+        const title = parsed.insights?.[0]?.title || "Monthly Analytics Summary";
+        const summary = parsed.aiSummary || "Analysis of restaurant sales and metrics.";
+        
+        await supabase.from("ai_insights").insert({
+          restaurant_id: getSafeUUID(clientId),
+          period: parsed.lastPeriod || "March 2025",
+          type: "Monthly Analytics",
+          title,
+          summary,
+          raw_analysis: parsed,
+          tone
+        });
+      } catch (dbErr) {
+        console.warn("Could not save new AI insight to Supabase:", dbErr);
+      }
+
       setAnalysisStep("done");
       setTimeout(() => nav({ to: "/sessions/$id/dashboard", params: { id: clientId } as any }), 1500);
     } catch (err: any) {
