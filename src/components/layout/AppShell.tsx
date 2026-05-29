@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { Users, FileBarChart, Settings, LogOut, Upload, Sparkles, UtensilsCrossed, Image, MessageCircle, Target, ClipboardList, ChevronDown } from "lucide-react";
+import { Users, FileBarChart, Settings, LogOut, Upload, Sparkles, UtensilsCrossed, Image, MessageCircle, Target, ClipboardList, ChevronDown, Receipt, Sun, Moon } from "lucide-react";
 import { useState, useEffect } from "react";
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -18,6 +18,29 @@ export function AppShell({ children }: { children: ReactNode }) {
   const loc = useLocation();
   const navBack = useNavigate();
   const { userRole, userEmail, userName: authUserName, restaurantId, signOut } = useAuth();
+  
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("theme");
+      if (stored === "dark" || stored === "light") return stored;
+      return "light";
+    }
+    return "light";
+  });
+
+  useEffect(() => {
+    const root = window.document.documentElement;
+    if (theme === "dark") {
+      root.classList.add("dark");
+    } else {
+      root.classList.remove("dark");
+    }
+    localStorage.setItem("theme", theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
+  };
 
   // Find active restaurant ID:
   // 1. From URL path (e.g. /clients/c2 or /sessions/c2/dashboard)
@@ -73,19 +96,16 @@ export function AppShell({ children }: { children: ReactNode }) {
       { to: "/clients", label: "Clients Dashboard", icon: Users, section: "Management" },
       { to: "/reports", label: "Reports Library", icon: ClipboardList, section: "Management" },
       { to: "/assistant", label: "AI Assistant", icon: Sparkles, section: "Management" },
-      { to: `/sessions/${activeRestaurantId}/dashboard`, label: "AI Insights", icon: FileBarChart, section: `Client: ${activeRestaurant.name}` },
-      { to: `/sessions/${activeRestaurantId}/dashboard`, search: "?tab=Menu", label: "Menu & Combos", icon: UtensilsCrossed, section: `Client: ${activeRestaurant.name}` },
-      { to: `/sessions/${activeRestaurantId}/dashboard`, search: "?tab=Poster", label: "AI Poster Creator", icon: Image, section: `Client: ${activeRestaurant.name}` },
-      { to: `/sessions/${activeRestaurantId}/dashboard`, search: "?tab=Actions", label: "Actions", icon: Target, section: `Client: ${activeRestaurant.name}` },
-      { to: `/clients/${activeRestaurantId}`, label: "Upload Data", icon: Upload, section: `Client: ${activeRestaurant.name}` },
       { to: "/settings", label: "Global Settings", icon: Settings, section: "System" }
     );
   } else {
     menuItems.push(
-      { to: `/sessions/${activeRestaurantId}/dashboard`, label: "AI Insights", icon: FileBarChart, section: "Dashboard" },
-      { to: `/sessions/${activeRestaurantId}/dashboard`, search: "?tab=Menu", label: "Menu & Combos", icon: UtensilsCrossed, section: "Dashboard" },
-      { to: `/sessions/${activeRestaurantId}/dashboard`, search: "?tab=Poster", label: "AI Poster Creator", icon: Image, section: "Dashboard" },
-      { to: `/sessions/${activeRestaurantId}/dashboard`, search: "?tab=Actions", label: "Actions", icon: Target, section: "Dashboard" },
+      { to: `/sessions/${activeRestaurantId}/dashboard`, label: "Pulse Dashboard", icon: FileBarChart, section: "Operations" },
+      { to: `/sessions/${activeRestaurantId}/dashboard`, search: "?tab=Register", label: "Register (POS)", icon: Receipt, section: "Operations" },
+      { to: `/sessions/${activeRestaurantId}/dashboard`, search: "?tab=Stock", label: "Stock Room", icon: ClipboardList, section: "Operations" },
+      { to: `/sessions/${activeRestaurantId}/dashboard`, search: "?tab=Voice", label: "Guest Voice", icon: MessageCircle, section: "Operations" },
+      { to: `/sessions/${activeRestaurantId}/dashboard`, search: "?tab=Menu", label: "Menu & Combos", icon: UtensilsCrossed, section: "Operations" },
+      { to: `/sessions/${activeRestaurantId}/dashboard`, search: "?tab=Poster", label: "AI Poster Creator", icon: Image, section: "Marketing" },
       { to: `/clients/${activeRestaurantId}`, label: "Upload Data", icon: Upload, section: "Workspace" },
       { to: "/assistant", label: "AI Assistant", icon: Sparkles, section: "Workspace" },
       { to: `/sessions/${activeRestaurantId}/dashboard`, search: "?tab=Contact", label: "Contact Support", icon: MessageCircle, section: "Workspace" },
@@ -120,7 +140,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       // Overview tab: match path but no tab query param
       const pathMatch = loc.pathname.startsWith("/sessions/") && loc.pathname.includes("/dashboard");
       const currentSearch = typeof window !== "undefined" ? window.location.search : "";
-      return pathMatch && (!currentSearch || currentSearch === "?tab=Overview" || currentSearch === "");
+      return pathMatch && (!currentSearch || currentSearch === "?tab=Overview" || currentSearch === "?tab=Pulse" || currentSearch === "");
     }
     if (item.to === "/clients") {
       return loc.pathname === "/clients";
@@ -159,26 +179,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="h-8 w-8 rounded-lg bg-gold-gradient grid place-items-center text-primary-foreground text-sm font-bold">र</div>
           <span className="font-display text-lg">Rasoi</span>
         </Link>
-        {userRole === "admin" && (
-          <div className="px-4 py-3 border-b border-border/60 bg-surface/20">
-            <div className="text-[10px] uppercase tracking-widest text-gold mb-1.5 font-medium">Active Client</div>
-            <div className="relative">
-              <select
-                value={activeRestaurantId}
-                onChange={(e) => handleRestaurantChange(e.target.value)}
-                className="w-full bg-surface border border-border/60 hover:border-gold/40 rounded-lg pl-3 pr-8 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-gold appearance-none cursor-pointer transition font-medium"
-              >
-                {CLIENTS.map((c) => (
-                  <option key={c.id} value={c.id} className="bg-background text-foreground">
-                    {c.icon} {c.name}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-            </div>
-          </div>
-        )}
-        <nav className="flex-1 px-3 py-4 space-y-5 overflow-y-auto">
+
+        <nav className="flex-1 px-3 py-4 space-y-5 overflow-y-auto scrollbar-none">
           {Object.entries(sections).map(([section, items]) => (
             <div key={section}>
               <div className="px-3 mb-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground/60 font-medium">{section}</div>
@@ -212,9 +214,12 @@ export function AppShell({ children }: { children: ReactNode }) {
               <div className="text-sm truncate">{userName}</div>
               <div className="text-xs text-muted-foreground truncate">{userSub}</div>
             </div>
-            <button onClick={handleLogout} aria-label="Sign out" className="text-muted-foreground hover:text-foreground">
-              <LogOut className="h-4 w-4" />
-            </button>
+             <button onClick={toggleTheme} aria-label="Toggle theme" className="text-muted-foreground hover:text-foreground mr-1.5 p-1 rounded hover:bg-surface-2 transition">
+               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+             </button>
+             <button onClick={handleLogout} aria-label="Sign out" className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-surface-2 transition">
+               <LogOut className="h-4 w-4" />
+             </button>
           </div>
         </div>
       </aside>
@@ -236,9 +241,12 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </Link>
               );
             })}
-            <button onClick={handleLogout} className="p-2 text-muted-foreground hover:text-foreground" aria-label="Sign out">
-              <LogOut className="h-4 w-4" />
-            </button>
+             <button onClick={toggleTheme} className="p-2 text-muted-foreground hover:text-foreground" aria-label="Toggle theme">
+               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+             </button>
+             <button onClick={handleLogout} className="p-2 text-muted-foreground hover:text-foreground" aria-label="Sign out">
+               <LogOut className="h-4 w-4" />
+             </button>
           </nav>
         </header>
         <main className="flex-1 min-w-0">{children}</main>

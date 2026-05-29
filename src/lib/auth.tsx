@@ -22,6 +22,52 @@ interface SignUpMeta {
   role?: "admin" | "restaurant";
 }
 
+interface LocalUser {
+  email: string;
+  passwordHash: string;
+  fullName: string;
+  company: string;
+  role: "admin" | "restaurant";
+  restaurantId: string;
+}
+
+// Check if Supabase keys are configured and are not placeholders
+const isSupabaseConfigured = (() => {
+  if (typeof window === "undefined") return false;
+  const url = import.meta.env.VITE_SUPABASE_URL;
+  const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
+  if (!url || !key) return false;
+  if (url.includes("placeholder")) return false;
+  if (key === "placeholder-key") return false;
+  // Accept both legacy JWT (eyJ...) and new publishable key (sb_publishable_...) formats
+  const isValidKey = key.startsWith("eyJ") || key.startsWith("sb_publishable_") || key.startsWith("sb_secret_");
+  return isValidKey;
+})();
+
+// Helper to save simulated users locally in case Supabase is absent or throws schema errors
+function saveLocalUser(user: LocalUser) {
+  if (typeof window === "undefined") return;
+  try {
+    const users = JSON.parse(localStorage.getItem("rasoi_local_users") || "[]") as LocalUser[];
+    const filtered = users.filter(u => u.email.toLowerCase() !== user.email.toLowerCase());
+    filtered.push(user);
+    localStorage.setItem("rasoi_local_users", JSON.stringify(filtered));
+  } catch (err) {
+    console.error("Failed to save local user:", err);
+  }
+}
+
+// Helper to find simulated users locally
+function findLocalUser(email: string): LocalUser | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const users = JSON.parse(localStorage.getItem("rasoi_local_users") || "[]") as LocalUser[];
+    return users.find(u => u.email.toLowerCase() === email.toLowerCase()) || null;
+  } catch {
+    return null;
+  }
+}
+
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function useAuth(): AuthContextType {
@@ -51,6 +97,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let mounted = true;
 
     const initSession = async () => {
+      if (!isSupabaseConfigured) {
+        if (mounted) setLoading(false);
+        return;
+      }
       try {
         const { data: { session: existingSession } } = await supabase.auth.getSession();
         if (mounted && existingSession) {
@@ -66,53 +116,73 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     initSession();
 
-    // Subscribe to auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      if (mounted) {
-        setSession(newSession);
-        setUser(newSession?.user ?? null);
-        
-        // Sync to sessionStorage for components that still read from there
-        if (newSession?.user) {
-          const meta = newSession.user.user_metadata;
-          sessionStorage.setItem("userRole", meta?.role || "restaurant");
-          sessionStorage.setItem("userEmail", newSession.user.email || "");
-          sessionStorage.setItem("userName", meta?.full_name || "");
-          sessionStorage.setItem("restaurantId", meta?.restaurant_id || "c1");
+    // Subscribe to auth changes if Supabase is configured
+    let subscription: any = null;
+    if (isSupabaseConfigured) {
+      const { data: { subscription: sub } } = supabase.auth.onAuthStateChange((_event, newSession) => {
+        if (mounted) {
+          setSession(newSession);
+          setUser(newSession?.user ?? null);
+          
+          // Sync to sessionStorage for components that still read from there
+          if (newSession?.user) {
+            const meta = newSession.user.user_metadata;
+            sessionStorage.setItem("userRole", meta?.role || "restaurant");
+            sessionStorage.setItem("userEmail", newSession.user.email || "");
+            sessionStorage.setItem("userName", meta?.full_name || "");
+            sessionStorage.setItem("restaurantId", meta?.restaurant_id || "c1");
+          }
         }
-      }
-    });
+      });
+      subscription = sub;
+    }
 
-    // Also check if we have a sessionStorage fallback (for when Supabase key is non-standard)
+    // Check if we have a local session even if Supabase auth isn't available
     if (typeof window !== "undefined") {
       const storedRole = sessionStorage.getItem("userRole");
       if (storedRole) {
-        // We have a local session even if Supabase auth isn't available
         setLoading(false);
       }
     }
 
     return () => {
       mounted = false;
-      subscription.unsubscribe();
+      if (subscription) {
+        subscription.unsubscribe();
+      }
     };
   }, []);
 
   const signIn = useCallback(async (email: string, password: string): Promise<{ error: string | null }> => {
+    // If Supabase keys are placeholders or not configured, bypass completely
+    if (!isSupabaseConfigured) {
+      return fallbackLocalAuth(email, password);
+    }
+
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       
       if (error) {
-        // Supabase auth failed — check if it's a connectivity/key issue vs wrong credentials
-        if (error.message?.includes("fetch") || error.message?.includes("network") || error.status === 0) {
-          // Network or key issue — fall back to local demo auth
-          return fallbackLocalAuth(email, password);
+        // Intercept Supabase login failure
+        // First try to check if credentials match our local fallback accounts or local storage registry
+        const localResult = fallbackLocalAuth(email, password);
+        if (!localResult.error) {
+          return { error: null }; // Logged in successfully locally!
         }
         
-        // For "Invalid login credentials" type errors, try local fallback too
-        // since the Supabase project may not have these users
-        const localResult = fallbackLocalAuth(email, password);
-        if (!localResult.error) return localResult;
+        // If it's a connectivity/API key error or schema error, return the local auth outcome
+        if (
+          error.message?.includes("fetch") || 
+          error.message?.includes("network") || 
+          error.message?.includes("API key") ||
+          error.status === 0 ||
+          error.status === 400 ||
+          error.status === 401 ||
+          email === "demo@rasoi.in" ||
+          email === "admin@gmail.com"
+        ) {
+          return localResult;
+        }
         
         return { error: error.message };
       }
@@ -135,6 +205,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signUp = useCallback(async (
     email: string, password: string, meta: SignUpMeta
   ): Promise<{ error: string | null; restaurantId?: string }> => {
+    // If Supabase keys are placeholders or not configured, bypass completely
+    if (!isSupabaseConfigured) {
+      return fallbackLocalSignUp(email, meta, password);
+    }
+
     try {
       const role = meta.role || "restaurant";
       
@@ -151,11 +226,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (error) {
-        // If Supabase signup fails (key issue, etc.), use local fallback
-        if (error.message?.includes("fetch") || error.message?.includes("network")) {
-          return fallbackLocalSignUp(email, meta);
-        }
-        return { error: error.message };
+        console.warn("Supabase signUp failed with error, falling back locally:", error.message);
+        return fallbackLocalSignUp(email, meta, password);
       }
 
       let newRestaurantId = "c1";
@@ -186,7 +258,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             });
           }
         } catch (dbErr) {
-          console.warn("Could not create restaurant row:", dbErr);
+          console.warn("Could not create restaurant row in Supabase:", dbErr);
         }
       }
 
@@ -196,18 +268,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       sessionStorage.setItem("userName", meta.fullName);
       sessionStorage.setItem("restaurantId", newRestaurantId);
 
+      // Save locally as well, so they can log back in locally if needed
+      const localUser: LocalUser = {
+        email,
+        passwordHash: password,
+        fullName: meta.fullName,
+        company: meta.company,
+        role,
+        restaurantId: newRestaurantId
+      };
+      saveLocalUser(localUser);
+
       return { error: null, restaurantId: newRestaurantId };
     } catch (err: any) {
-      console.warn("Supabase signUp failed, using local fallback:", err);
-      return fallbackLocalSignUp(email, meta);
+      console.warn("Supabase signUp exception, falling back locally:", err);
+      return fallbackLocalSignUp(email, meta, password);
     }
   }, []);
 
   const signOut = useCallback(async () => {
     try {
-      await supabase.auth.signOut();
+      if (isSupabaseConfigured) {
+        await supabase.auth.signOut();
+      }
     } catch {
-      // Ignore — may fail if Supabase isn't fully configured
+      // Ignore
     }
     sessionStorage.clear();
     setUser(null);
@@ -224,9 +309,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// --- Local fallback auth (for when Supabase isn't fully configured) ---
+// --- Local fallback auth (for when Supabase isn't fully configured or queries fail) ---
 
 function fallbackLocalAuth(email: string, password: string): { error: string | null } {
+  // 1. Check hardcoded accounts
   if (email === "admin@gmail.com" && password === "admin@123") {
     sessionStorage.setItem("userRole", "admin");
     sessionStorage.setItem("userEmail", email);
@@ -241,14 +327,39 @@ function fallbackLocalAuth(email: string, password: string): { error: string | n
     sessionStorage.setItem("restaurantId", "c1");
     return { error: null };
   }
-  return { error: "Invalid email or password. Try admin@gmail.com / admin@123 or demo@rasoi.in / demo1234" };
+  
+  // 2. Check local database
+  const localUser = findLocalUser(email);
+  if (localUser && localUser.passwordHash === password) {
+    sessionStorage.setItem("userRole", localUser.role);
+    sessionStorage.setItem("userEmail", localUser.email);
+    sessionStorage.setItem("userName", localUser.fullName);
+    sessionStorage.setItem("restaurantId", localUser.restaurantId);
+    return { error: null };
+  }
+  
+  return { error: "Invalid credentials. Try admin@gmail.com / admin@123, demo@rasoi.in / demo1234, or register a new account." };
 }
 
-function fallbackLocalSignUp(email: string, meta: SignUpMeta): { error: string | null; restaurantId?: string } {
-  // For local mode, just create a session
-  sessionStorage.setItem("userRole", meta.role || "restaurant");
+function fallbackLocalSignUp(email: string, meta: SignUpMeta, password?: string): { error: string | null; restaurantId?: string } {
+  const role = meta.role || "restaurant";
+  const newRestaurantId = "c_" + Math.random().toString(36).substr(2, 9);
+  
+  const localUser: LocalUser = {
+    email,
+    passwordHash: password || "",
+    fullName: meta.fullName,
+    company: meta.company,
+    role,
+    restaurantId: newRestaurantId
+  };
+  
+  saveLocalUser(localUser);
+
+  sessionStorage.setItem("userRole", role);
   sessionStorage.setItem("userEmail", email);
   sessionStorage.setItem("userName", meta.fullName);
-  sessionStorage.setItem("restaurantId", "c1");
-  return { error: null, restaurantId: "c1" };
+  sessionStorage.setItem("restaurantId", newRestaurantId);
+  
+  return { error: null, restaurantId: newRestaurantId };
 }

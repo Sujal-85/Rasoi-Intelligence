@@ -155,7 +155,6 @@ function NewAnalysis({ clientId, client }: { clientId: string; client: ReturnTyp
   const [instructions, setInstructions] = useState("");
   const [tourStep, setTourStep] = useState(0);
 
-  const modelName = typeof window !== "undefined" ? getModelName() : "gemini-2.5-flash";
 
   const handleLoadDemoDataset = () => {
     setUploadedFiles([
@@ -218,6 +217,26 @@ function NewAnalysis({ clientId, client }: { clientId: string; client: ReturnTyp
       const parsed = JSON.parse(response.replace(/```json|```/g, ""));
       const cacheKey = `rasoi_ai_analytics_${clientId}`;
       sessionStorage.setItem(cacheKey, JSON.stringify(parsed));
+      
+      // Save newly generated insights to Supabase so it persists permanently
+      try {
+        const tone = parsed.insights?.[0]?.tone || "green";
+        const title = parsed.insights?.[0]?.title || "Monthly Analytics Summary";
+        const summary = parsed.aiSummary || "Analysis of restaurant sales and metrics.";
+        
+        await supabase.from("ai_insights").insert({
+          restaurant_id: getSafeUUID(clientId),
+          period: parsed.lastPeriod || "March 2025",
+          type: "Monthly Analytics",
+          title,
+          summary,
+          raw_analysis: parsed,
+          tone
+        });
+      } catch (dbErr) {
+        console.warn("Could not save new AI insight to Supabase:", dbErr);
+      }
+
       setAnalysisStep("done");
       setTimeout(() => nav({ to: "/sessions/$id/dashboard", params: { id: clientId } as any }), 1500);
     } catch (err: any) {
@@ -304,10 +323,6 @@ function NewAnalysis({ clientId, client }: { clientId: string; client: ReturnTyp
         <div>
           <div className="text-xs uppercase tracking-widest text-muted-foreground">Analysis Details</div>
           <div className="font-display text-2xl mt-1">March 2025 Summary</div>
-          <div className="mt-4 p-3 rounded-xl bg-surface/60 border border-border/60">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">AI Engine Core</div>
-            <div className="text-sm font-mono text-gold flex items-center gap-1.5"><Cpu className="h-3.5 w-3.5 text-gold" /> {modelName}</div>
-          </div>
           <div className="mt-6 space-y-3.5 text-sm">
             <StatusRow icon={CheckCircle2} ok={uploadedFiles.length > 0}>{uploadedFiles.length > 0 ? `${uploadedFiles.length} file(s) loaded.` : "Attach billing files to train."}</StatusRow>
             {detectedFields.length > 0 && <StatusRow icon={CheckCircle2} ok>Detected {detectedFields.length} columns.</StatusRow>}
