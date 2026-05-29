@@ -212,9 +212,6 @@ function DashboardPage() {
       } catch { /* ignore parse errors */ }
     }
 
-    // If we reach this point, we didn't find any cached or database-stored analytics.
-    // Instead of calling the Gemini API automatically on mount, load the fallback/sample data
-    // and show the banner informing the user to upload their files to view live analytics.
     setAiLoading(true);
     setAiError(true);
 
